@@ -26,4 +26,4 @@ e=c.replace("      _ => null,",''.join("      ('%s', _) => '对方刚才碰了�
 open(D,'w',encoding='utf-8').write(d.replace(c,e))
 PY
 cd app&&flutter pub get
-DSH_SIDE_BUILD=1 flutter build apk --debug --flavor arm64 --target-platform android-arm64 --build-number 202601010001 --dart-define=DSH_APP_VERSION=1.4.0+202601010001
+DSH_SIDE_BUILD=1 flutter build apk --debug --flavor arm64 --target-platform android-arm64 --build-number 11260340 --dart-define=DSH_APP_VERSION=1.4.0+11260340
