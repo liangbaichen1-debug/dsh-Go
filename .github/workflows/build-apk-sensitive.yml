@@ -1,0 +1,25 @@
+name: Build sensitive APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.9
+          channel: stable
+          cache: true
+      - run: bash tools/sensitive-build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dsh-go-sensitive-apk
+          path: app/build/app/outputs/flutter-apk/*.apk
+          if-no-files-found: error
