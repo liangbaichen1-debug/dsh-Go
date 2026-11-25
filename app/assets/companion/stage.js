@@ -135,6 +135,8 @@
     duck: { ms: 1500, tracks: { ParamAngleY: [[0, 0], [0.2, -12], [0.7, -12], [1, 0]], ParamBodyAngleY: [[0, 0], [0.2, -4], [0.7, -4], [1, 0]] } },
     sway: { ms: 2600, tracks: { ParamBodyAngleZ: [[0, 0], [0.25, 5], [0.75, -5], [1, 0]], ParamAngleZ: [[0, 0], [0.25, -3], [0.75, 3], [1, 0]] } },
     stretch: { ms: 1900, tracks: { ParamAngleY: [[0, 0], [0.35, 10], [0.7, 10], [1, 0]], ParamBodyAngleY: [[0, 0], [0.35, 6], [0.7, 6], [1, 0]] } },
+    pushback: { ms: 900, tracks: { ParamBodyAngleX: [[0, 0], [0.18, -10], [1, 0]], ParamAngleZ: [[0, 0], [0.2, -8], [0.5, 8], [1, 0]], ParamAngleY: [[0, 0], [0.2, 6], [1, 0]] } },
+    squirm: { ms: 1700, tracks: { ParamBodyAngleZ: [[0, 0], [0.2, 7], [0.45, -7], [0.7, 5], [1, 0]], ParamAngleZ: [[0, 0], [0.25, -5], [0.6, 5], [1, 0]] } },
     yawn: {
       ms: 2400,
       tracks: {
@@ -151,7 +153,7 @@
 
   /** What she does when nothing is going on depends a little on the hour. */
   /** Where closeness starts to show, in steps: same lines as companion_bond.dart. */
-  const BOND_STEPS = [0.03, 0.1, 0.3];
+  const BOND_STEPS = [0.01, 0.1, 0.3];
   const bondStep = () => BOND_STEPS.filter((s) => life.vitals.closeness >= s).length;
 
   function idleChoices() {
@@ -176,13 +178,84 @@
   /** How long each emotion holds before the face relaxes, ms. */
   const EMOTION_HOLD = 5200;
 
-  /** What a touch does on the stage. The line she says, if any, is Flutter's. */
+  /**
+   * What a touch does on the stage. The line she says, if any, is Flutter's.
+   *
+   * `sense` is how far she must already know you before she lets that spot be
+   * touched: 0 always, 1 from a little familiar, 2 from close, 3 only when very
+   * close. Below it she flinches away instead (`refuse` names the face).
+   * `over` (reported) says how far past the threshold the touch landed, so
+   * Flutter can let her words follow the same curve the body does.
+   */
   const TAPS = {
-    head: { emotion: 'happy', hold: 1800, action: 'nodSmall' },
-    face: { emotion: 'shy', hold: 1800, action: 'recoil' },
-    body: { emotion: 'surprised', hold: 1500, action: 'duck' },
-    tail: { emotion: 'surprised', hold: 1500, action: 'recoil', tail: true },
-    legs: { emotion: 'confused', hold: 1500, action: 'tilt' },
+    head: { emotion: 'happy', hold: 1800, action: 'nodSmall', sense: 0 },
+    hair: { emotion: 'shy', hold: 1600, action: 'tilt', sense: 0 },
+    ear_l: { emotion: 'shy', hold: 1700, action: 'tilt', sense: 1 },
+    ear_r: { emotion: 'shy', hold: 1700, action: 'tiltLeft', sense: 1 },
+    face: { emotion: 'shy', hold: 1800, action: 'recoil', sense: 0 },
+    cheek_l: { emotion: 'shy', hold: 1700, action: 'tilt', sense: 0 },
+    cheek_r: { emotion: 'shy', hold: 1700, action: 'tiltLeft', sense: 0 },
+    chin: { emotion: 'surprised', hold: 1500, action: 'recoil', sense: 1 },
+    neck: { emotion: 'shy', hold: 1800, action: 'duck', sense: 1 },
+    shoulder_l: { emotion: 'calm', hold: 1500, action: 'tilt', sense: 1 },
+    shoulder_r: { emotion: 'calm', hold: 1500, action: 'tiltLeft', sense: 1 },
+    arm_l: { emotion: 'calm', hold: 1400, action: 'nodSmall', sense: 1 },
+    arm_r: { emotion: 'calm', hold: 1400, action: 'nodSmall', sense: 1 },
+    forearm_l: { emotion: 'calm', hold: 1400, action: 'nodSmall', sense: 0 },
+    forearm_r: { emotion: 'calm', hold: 1400, action: 'nodSmall', sense: 0 },
+    hand_l: { emotion: 'shy', hold: 1600, action: 'nodSmall', sense: 0 },
+    hand_r: { emotion: 'shy', hold: 1600, action: 'nodSmall', sense: 0 },
+    hand: { emotion: 'shy', hold: 1600, action: 'nodSmall', sense: 0 },
+    arm: { emotion: 'calm', hold: 1400, action: 'nodSmall', sense: 1 },
+    chest: { emotion: 'surprised', hold: 1600, action: 'recoil', sense: 2, refuse: 'angry' },
+    chest_l: { emotion: 'surprised', hold: 1600, action: 'recoil', sense: 2, refuse: 'angry' },
+    chest_r: { emotion: 'surprised', hold: 1600, action: 'recoil', sense: 2, refuse: 'angry' },
+    belly: { emotion: 'shy', hold: 1700, action: 'duck', sense: 2, refuse: 'confused' },
+    navel: { emotion: 'shy', hold: 1800, action: 'squirm', sense: 2, refuse: 'confused' },
+    waist: { emotion: 'shy', hold: 1600, action: 'tilt', sense: 2, refuse: 'confused' },
+    waist_l: { emotion: 'shy', hold: 1600, action: 'tilt', sense: 2, refuse: 'confused' },
+    waist_r: { emotion: 'shy', hold: 1600, action: 'tiltLeft', sense: 2, refuse: 'confused' },
+    hip: { emotion: 'surprised', hold: 1500, action: 'recoil', sense: 2, refuse: 'angry' },
+    groin: { emotion: 'surprised', hold: 2000, action: 'pushback', sense: 3, refuse: 'angry' },
+    thigh: { emotion: 'confused', hold: 1500, action: 'duck', sense: 2, refuse: 'confused' },
+    thigh_l: { emotion: 'confused', hold: 1500, action: 'duck', sense: 2, refuse: 'confused' },
+    thigh_r: { emotion: 'confused', hold: 1500, action: 'duck', sense: 2, refuse: 'confused' },
+    knee: { emotion: 'confused', hold: 1400, action: 'tilt', sense: 1 },
+    knee_l: { emotion: 'confused', hold: 1400, action: 'tilt', sense: 1 },
+    knee_r: { emotion: 'confused', hold: 1400, action: 'tiltLeft', sense: 1 },
+    shin: { emotion: 'confused', hold: 1400, action: 'tilt', sense: 1 },
+    shin_l: { emotion: 'confused', hold: 1400, action: 'tilt', sense: 1 },
+    shin_r: { emotion: 'confused', hold: 1400, action: 'tiltLeft', sense: 1 },
+    foot: { emotion: 'surprised', hold: 1500, action: 'recoil', sense: 1 },
+    foot_l: { emotion: 'surprised', hold: 1500, action: 'recoil', sense: 1 },
+    foot_r: { emotion: 'surprised', hold: 1500, action: 'recoil', sense: 1 },
+    tail: { emotion: 'surprised', hold: 1500, action: 'recoil', sense: 1, tail: true },
+    tail_tip: { emotion: 'shy', hold: 1400, action: 'tilt', sense: 2, tail: true },
+    collarbone_l: { emotion: 'shy', hold: 1700, action: 'duck', sense: 2, refuse: 'confused' },
+    collarbone_r: { emotion: 'shy', hold: 1700, action: 'duck', sense: 2, refuse: 'confused' },
+    ribs_l: { emotion: 'confused', hold: 1600, action: 'squirm', sense: 2, refuse: 'confused' },
+    ribs_r: { emotion: 'confused', hold: 1600, action: 'squirm', sense: 2, refuse: 'confused' },
+    back: { emotion: 'calm', hold: 1500, action: 'stretch', sense: 1 },
+    back_l: { emotion: 'calm', hold: 1500, action: 'stretch', sense: 1 },
+    back_r: { emotion: 'calm', hold: 1500, action: 'stretch', sense: 1 },
+    armpit_l: { emotion: 'surprised', hold: 1600, action: 'squirm', sense: 2, refuse: 'angry' },
+    armpit_r: { emotion: 'surprised', hold: 1600, action: 'squirm', sense: 2, refuse: 'angry' },
+    inner_thigh_l: { emotion: 'surprised', hold: 1900, action: 'recoil', sense: 3, refuse: 'angry' },
+    inner_thigh_r: { emotion: 'surprised', hold: 1900, action: 'recoil', sense: 3, refuse: 'angry' },
+    calf_l: { emotion: 'confused', hold: 1400, action: 'tilt', sense: 1 },
+    calf_r: { emotion: 'confused', hold: 1400, action: 'tiltLeft', sense: 1 },
+    ankle_l: { emotion: 'surprised', hold: 1400, action: 'recoil', sense: 1 },
+    ankle_r: { emotion: 'surprised', hold: 1400, action: 'recoil', sense: 1 },
+    toe_l: { emotion: 'surprised', hold: 1400, action: 'recoil', sense: 1 },
+    toe_r: { emotion: 'surprised', hold: 1400, action: 'recoil', sense: 1 },
+    palm_l: { emotion: 'shy', hold: 1600, action: 'nodSmall', sense: 0 },
+    palm_r: { emotion: 'shy', hold: 1600, action: 'nodSmall', sense: 0 },
+    wrist_l: { emotion: 'shy', hold: 1500, action: 'nodSmall', sense: 0 },
+    wrist_r: { emotion: 'shy', hold: 1500, action: 'nodSmall', sense: 0 },
+    nape: { emotion: 'shy', hold: 1800, action: 'duck', sense: 2, refuse: 'confused' },
+    jaw: { emotion: 'shy', hold: 1700, action: 'tilt', sense: 1 },
+    body: { emotion: 'surprised', hold: 1500, action: 'duck', sense: 1 },
+    legs: { emotion: 'confused', hold: 1500, action: 'tilt', sense: 1 },
   };
 
   // ── Fitting any model (docs/design/companion-adapt.md) ──────────────────
@@ -403,6 +476,18 @@
         }
       }
       core.saveParameters();
+    }
+
+    /** 直接写一个模型参数（服装、开关这种由素材包决定的），返回是否写成功。 */
+    setRaw(id, value) {
+      if (!this.has(id) || !Number.isFinite(value)) return false;
+      try {
+        this._model.setParameterValueById(this.id(id), value);
+        this._model.saveParameters();
+        return true;
+      } catch (_) {
+        return false;
+      }
     }
 
     get core() {
@@ -804,6 +889,14 @@
     };
     emotions = mergeEmotions(authored.emotions);
     actions = { ...ACTIONS, ...authored.actions };
+    // 素材包可以改这张表：feel.zones 覆盖内置，以后调手感不用重编 App。
+    const feelZones = character.feel && typeof character.feel === 'object' ? character.feel.zones : null;
+    loadDressRules();
+    if (feelZones && typeof feelZones === 'object' && !Array.isArray(feelZones)) {
+      for (const [id, spec] of Object.entries(feelZones)) {
+        if (spec && typeof spec === 'object') TAPS[id] = { ...(TAPS[id] ?? {}), ...spec };
+      }
+    }
     if (Array.isArray(adapter?.zones) && adapter.zones.length) {
       zones = adapter.zones;
       zonesFrom = 'adapter';
@@ -1577,6 +1670,21 @@
     if (press.zone) {
       const held = press;
       held.hugTimer = setTimeout(() => startHug(held), HUG_MS);
+      // 按住不动 1.2 秒：手一直放在那儿，比戳一下重。
+      held.holdTimer = setTimeout(() => {
+        if (press !== held || held.travel >= 14) return;
+        const r = TAPS[held.zone] ?? TAPS.body;
+        const sense = r.sense ?? 0;
+        const willing = sense <= bondStep();
+        if (willing) {
+          setEmotion('shy', 3200);
+          if (held.zone === 'head') life.patting = true;
+        } else {
+          setEmotion(r.refuse ?? 'confused', 2000);
+          playAction('pushback');
+        }
+        post({ type: 'touch', zone: held.zone, kind: willing ? 'hold' : 'refuse', sense, over: 0, strength: 1.35 });
+      }, 1200);
     }
   });
 
@@ -1659,6 +1767,25 @@
       life.expecting = clamp(1 - Math.hypot(e.clientX - mx, e.clientY - my) / 170, 0, 1);
       return;
     }
+    // 抹一下：任何部位都算抚摸，每 260ms 只报一次（Flutter 那边接话）。
+    if (press.zone && press.travel > 26 && !press.dragging && press.zone !== 'head' && pointers.size === 1) {
+      const now = performance.now();
+      if (!press.strokeAt || now > press.strokeAt) {
+        press.strokeAt = now + 260;
+        const point = toModel(e.clientX, e.clientY);
+        const zone = zoneAt(point.x, point.y) ?? press.zone;
+        const r = TAPS[zone] ?? TAPS.body;
+        const sense = r.sense ?? 0;
+        const willing = sense <= bondStep();
+        if (willing) {
+          setEmotion('shy', 2600);
+          life.patting = true;
+        } else {
+          setEmotion(r.refuse ?? 'confused', 1800);
+        }
+        post({ type: 'touch', zone, kind: willing ? 'stroke' : 'refuse', sense, over: 0, strength: 1 });
+      }
+    }
     if (press.zone === 'head' && press.travel > 26 && !press.hugging) {
       if (!life.patting) {
         life.patting = true;
@@ -1687,6 +1814,7 @@
     if (!press || press.id !== e.pointerId) return;
     const quick = e.type === 'pointerup' && e.timeStamp - press.at < 420 && press.travel < 14;
     clearTimeout(press.hugTimer);
+    clearTimeout(press.holdTimer);
     if (press.dragging) {
       endDrag(e);
     } else if (press.hugging) {
@@ -1710,29 +1838,49 @@
   if (!FLOAT) canvas.addEventListener('pointercancel', endPointer);
   if (!FLOAT) canvas.addEventListener('lostpointercapture', endPointer);
 
-  function tap(zone, clientX) {
+  function tap(zone, clientX, pressure = 1) {
     const now = performance.now();
     taps.push(now);
     while (taps.length && now - taps[0] > 1100) taps.shift();
     const rect = canvas.getBoundingClientRect();
     const side = (clientX - rect.left) / rect.width < 0.5 ? -1 : 1;
+    const strength = clamp(Number.isFinite(pressure) ? pressure : 1, 0.4, 1.6);
     if (taps.length >= 3) {
       taps.length = 0;
       setEmotion('dizzy', 2400);
       playAction('shake');
-      post({ type: 'touch', zone, kind: 'tease' });
+      post({ type: 'touch', zone, kind: 'tease', sense: TAPS[zone]?.sense ?? 0, over: 0 });
       return;
     }
     const reaction = TAPS[zone] ?? TAPS.body;
-    setEmotion(reaction.emotion, reaction.hold);
+    const sense = reaction.sense ?? 0;
+    const step = bondStep();
+    // Not yet: she has not let him that far, so the body answers first and
+    // Flutter only gets to speak after it (kind: 'refuse').
+    if (sense > step) {
+      setEmotion(reaction.refuse ?? 'angry', 2200);
+      playAction('pushback');
+      if (!REDUCED) {
+        life.poke.x.v += side * -110 * strength;
+        life.poke.z.v += side * 70 * strength;
+      }
+      post({ type: 'touch', zone, kind: 'refuse', sense, step, over: 0 });
+      return;
+    }
+    // Willing: how far past the threshold decides how soft she goes, from
+    // holding still to leaning in. Same 0–1 the words use.
+    const floor = sense === 0 ? 0 : BOND_STEPS[sense - 1];
+    const over = sense === 0 ? clamp(life.vitals.closeness * 2, 0, 1) : clamp((life.vitals.closeness - floor) / 0.22, 0, 1);
+    const emotion = over > 0.5 && sense >= 1 ? 'shy' : reaction.emotion;
+    setEmotion(emotion, Math.round((reaction.hold ?? 1500) * (0.85 + 0.35 * over)));
     playAction(reaction.action);
     if (reaction.tail) life.tailKick = 1;
     if (!REDUCED) {
-      life.poke.x.v += side * -70;
-      life.poke.z.v += side * 45;
+      life.poke.x.v += side * -70 * strength * (1 - 0.5 * over);
+      life.poke.z.v += side * 45 * strength * (1 - 0.5 * over);
       if (zone === 'tail') hop(0.8);
     }
-    post({ type: 'touch', zone, kind: 'tap' });
+    post({ type: 'touch', zone, kind: 'tap', sense, step, over: Math.round(over * 100) / 100 });
   }
 
   // ── Commands from Flutter ───────────────────────────────────────────────
@@ -1784,6 +1932,8 @@
         energy: unit(energy, life.vitals.energy),
         closeness: unit(closeness, life.vitals.closeness),
       };
+      // 关系到了，衣服跟着变（feel.clothes 配了才生效）。
+      applyDress();
     },
     activity: ({ name, remainingMs }) => setActivity(name, remainingMs),
     // adapter.json was written (or removed): wear it now, no reload.
@@ -2035,6 +2185,37 @@
       drawn++;
       if (ts - fpsAt >= 1000) { fps = drawn * 1000 / (ts - fpsAt); drawn = 0; fpsAt = ts; }
     } catch (_) { floatFailed('companion_render_failed'); }
+  }
+
+  /**
+   * 换装：character.json 的 `feel.clothes` —— {名字: {param, value, at}}。
+   * 亲密度到 `at` 就写一次那个参数（裙子、胸口衣服、鞋这类开关）。
+   * 语义（1 是穿还是脱）各模型不同，所以默认不配，用实测确定后再写 JSON。
+   */
+  let dressRules = [];
+
+  function loadDressRules() {
+    dressRules = [];
+    const feel = character && typeof character === 'object' ? character.feel : null;
+    const clothes = feel && typeof feel === 'object' ? feel.clothes : null;
+    if (!clothes || typeof clothes !== 'object') return;
+    for (const rule of Object.values(clothes)) {
+      if (!rule || typeof rule !== 'object') continue;
+      const id = rule.param;
+      const value = Number(rule.value);
+      const at = Number(rule.at);
+      if (typeof id !== 'string' || !Number.isFinite(value) || !Number.isFinite(at)) continue;
+      dressRules.push({ id, value, at: clamp(at, 0, 1), applied: false });
+    }
+  }
+
+  function applyDress() {
+    if (!dressRules.length || !model) return;
+    const closeness = life?.vitals?.closeness ?? 0;
+    for (const rule of dressRules) {
+      if (rule.applied || closeness < rule.at) continue;
+      if (model.setRaw(rule.id, rule.value)) rule.applied = true;
+    }
   }
 
   /** A tap from the native window, in 0–1 of the viewport: the room's tap, without its marks. */

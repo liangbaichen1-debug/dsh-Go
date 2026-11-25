@@ -1591,7 +1591,7 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
       debugPrint('tavern: Live2D stage failed: $why');
       if (mounted) setState(() => _stageFailed = true);
     },
-    onTouch: (_, _) {},
+    onTouch: (_, _, _) {},
     onWake: () {},
     onMood: (_) {},
     onObject: (_) {},

@@ -90,6 +90,28 @@ class CompanionStageController {
 }
 
 /// What the stage tells the page.
+/// How a touch landed, as the stage felt it (stage.js `tap`): how far the spot
+/// requires her to know the person (`sense`), how far past that this touch got
+/// (`over`, 0–1), and how hard the finger pressed (`strength`, 0.4–1.6).
+class CompanionTouchFeel {
+  const CompanionTouchFeel({this.sense = 0, this.over = 0, this.strength = 1});
+
+  final int sense;
+  final double over;
+  final double strength;
+
+  static CompanionTouchFeel fromMessage(Map message) {
+    final sense = message['sense'];
+    final over = message['over'];
+    final strength = message['strength'];
+    return CompanionTouchFeel(
+      sense: sense is num ? sense.toInt() : 0,
+      over: over is num ? over.toDouble() : 0,
+      strength: strength is num ? strength.toDouble() : 1,
+    );
+  }
+}
+
 class CompanionStageEvents {
   const CompanionStageEvents({
     required this.onReady,
@@ -116,7 +138,7 @@ class CompanionStageEvents {
   /// What the model brings of its own, as it finishes loading (before [onReady]).
   final ValueChanged<CompanionModelInfo>? onModel;
   final ValueChanged<String> onFailed;
-  final void Function(String zone, String kind) onTouch;
+  final void Function(String zone, String kind, CompanionTouchFeel feel) onTouch;
   final VoidCallback onWake;
   final ValueChanged<String> onMood;
 
@@ -397,7 +419,9 @@ class _CompanionStageState extends State<CompanionStage> with WidgetsBindingObse
       case 'touch':
         final zone = message['zone'];
         final kind = message['kind'];
-        if (zone is String && kind is String) events.onTouch(zone, kind);
+        if (zone is String && kind is String) {
+          events.onTouch(zone, kind, CompanionTouchFeel.fromMessage(message));
+        }
       case 'wake':
         events.onWake();
       case 'mood':

@@ -4,7 +4,7 @@
 // (ADDENDUM-06 #3) may move the lines. stage.js `bondStep` keeps the same ones.
 
 /// Closeness at which each step after the first begins.
-const companionBondSteps = [0.03, 0.10, 0.30];
+const companionBondSteps = [0.01, 0.10, 0.30];
 
 /// 0 just met, 1 getting to know each other, 2 close, 3 very close.
 int companionBond(double closeness) => companionBondSteps.where((step) => closeness >= step).length;

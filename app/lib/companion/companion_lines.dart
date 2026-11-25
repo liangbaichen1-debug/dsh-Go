@@ -43,7 +43,9 @@ class CompanionLines {
   factory CompanionLines.parse(Object? json) {
     final sets = <String, List<String>>{};
     if (json is Map) {
-      for (final moment in moments.keys) {
+      // 任何键都收：`<moment>`、`<kind>:<zone>`、`warm:<zone>` 都算，素材包自己定义。
+      for (final moment in json.keys.whereType<String>()) {
+        if (moment.isEmpty || moment.length > 64) continue;
         final value = json[moment];
         final lines = [
           if (value is String) value.trim(),

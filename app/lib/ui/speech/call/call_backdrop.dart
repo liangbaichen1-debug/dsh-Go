@@ -147,7 +147,7 @@ class _CompanionBackdropState extends ConsumerState<CompanionBackdrop> {
       widget.onReady();
     },
     onFailed: (_) => widget.onFailed(),
-    onTouch: (_, _) {},
+    onTouch: (_, _, _) {},
     onWake: () {},
     onMood: (_) {},
     onObject: (_) {},

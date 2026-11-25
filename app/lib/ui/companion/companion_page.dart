@@ -4,6 +4,7 @@
 // supplies live assistant words, tools, questions and approvals.
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
@@ -242,6 +243,14 @@ class _CompanionPageState extends ConsumerState<CompanionPage>
   CompanionLightHistory? _lightHistory;
   CompanionMemoryOwner? get _memoryOwner => _attachment.memory;
   CompanionSnapshot? _vitals;
+  /// 一次只让一句由模型现写；后到的触摸不排队，等这句说完再说。
+  bool _touchReplyBusy = false;
+  int _touchToken = 0;
+  /// 她正在回别的话时被碰了一下：等这句说完再补反应，而不是丢掉。
+  (String, String, CompanionTouchFeel)? _pendingTouch;
+  /// 每一处到今天为止被碰过多少次：同一个地方被碰熟了，反应就会变。
+  final Map<String, int> _partTouches = {};
+  Timer? _partTouchesSave;
 
   // What's on screen.
   final _bubbleWords = ValueNotifier<String?>(null);
@@ -422,6 +431,8 @@ class _CompanionPageState extends ConsumerState<CompanionPage>
     // Anonymous usage statistics: the room was opened once more.
     ref.read(usageStatsProvider.notifier).count(UsageCount.room);
     _initiative = ref.read(companionInitiativeProvider);
+    // 哪儿被碰惯了：开机读回来，她记得。
+    unawaited(_loadPartTouches());
     // How often she may speak up: the person's pick, followed as it changes.
     // The gate keeps the owner's clocks, so a line's deadline means the same to both.
     _clock = ref.read(companionInitiativeClockProvider);
@@ -876,7 +887,78 @@ class _CompanionPageState extends ConsumerState<CompanionPage>
     _say(line);
   }
 
-  void _onTouch(String zone, String kind) {
+  /// 每个部位在中文里的说法：气泡、记忆、给模型的事实都用同一套。
+  static const _zoneNames = <String, String>{
+    'head': '头顶', 'hair': '头发', 'ear_l': '左耳', 'ear_r': '右耳',
+    'face': '脸', 'cheek_l': '左边脸颊', 'cheek_r': '右边脸颊', 'chin': '下巴',
+    'neck': '脖子', 'shoulder_l': '左肩', 'shoulder_r': '右肩',
+    'arm_l': '左臂', 'arm_r': '右臂', 'arm': '手臂', 'forearm_l': '左前臂', 'forearm_r': '右前臂',
+    'hand_l': '左手', 'hand_r': '右手', 'hand': '手',
+    'chest': '胸口', 'chest_l': '胸口', 'chest_r': '胸口',
+    'belly': '小腹', 'navel': '肚脐', 'waist': '腰', 'waist_l': '左边腰', 'waist_r': '右边腰',
+    'hip': '腰侧', 'groin': '两腿之间', 'thigh': '大腿', 'thigh_l': '左大腿', 'thigh_r': '右大腿',
+    'knee': '膝盖', 'knee_l': '左膝', 'knee_r': '右膝',
+    'shin': '小腿', 'shin_l': '左小腿', 'shin_r': '右小腿',
+    'foot': '脚', 'foot_l': '左脚', 'foot_r': '右脚',
+    'tail': '尾巴', 'tail_tip': '尾巴尖', 'body': '身体', 'legs': '腿',
+  };
+
+  /// 她还没让人碰的地方被碰到时的话，按那处要求的分寸（sense）分档。
+  static const _refuseLines = <int, List<String>>{
+    1: ['唔…别这样', '还没到这一步呢', '你手拿开啦', '干嘛突然动手'],
+    2: ['不行…现在还不行', '别乱摸', '我会生气的', '那里不可以'],
+    3: ['你…你先别碰', '太突然了', '不许碰那里', '不行，真的不行'],
+  };
+
+  /// 愿意被碰时的话：先看她素材包里有没有为这一处写好的句子
+  /// （`stroke:<zone>` / `hold:<zone>` / `<zone>` / `warm:<zone>`），没有再落默认。
+  List<String> _feelLines(String zone, String kind, CompanionTouchFeel feel) {
+    final own = _character.lines;
+    final warm = feel.over >= 0.55;
+    if (own != null) {
+      for (final key in ['$kind:$zone', if (warm) 'warm:$zone', zone, '$kind', 'warm']) {
+        final lines = own[key];
+        if (lines != null && lines.isNotEmpty) return lines;
+      }
+    }
+    return switch (zone) {
+      'head' || 'hair' => warm ? const ['嗯…再摸摸', '……舒服', '就再一下'] : const ['唔…', '别弄乱我头发', '有点痒'],
+      'ear_l' || 'ear_r' => warm ? const ['耳朵很敏感的…', '……嗯', '别对着耳朵吹气'] : const ['唔！', '耳朵别碰', '痒'],
+      'face' || 'cheek_l' || 'cheek_r' || 'chin' => warm ? const ['……嗯', '脸都热了', '再靠近一点'] : const ['你干嘛', '别戳我的脸', '脸要被你摸红了'],
+      'neck' => warm ? const ['那里…有点痒', '……别亲', '嗯'] : const ['脖子不行…', '别碰那儿', '汗毛都立起来了'],
+      'shoulder_l' || 'shoulder_r' || 'arm_l' || 'arm_r' || 'arm' => warm ? const ['靠在你这儿一会儿', '……嗯', '别松手'] : const ['唔？', '有点突然', '你抓我干嘛'],
+      'forearm_l' || 'forearm_r' || 'hand_l' || 'hand_r' || 'hand' => warm ? const ['手给你', '牵一会儿吧', '……嗯'] : const ['唔…', '你摸我手', '有点痒'],
+      'chest' || 'chest_l' || 'chest_r' => warm ? const ['……嗯', '轻一点', '别停'] : const ['你…看着点', '手放哪儿呢'],
+      'belly' => warm ? const ['……好痒', '别挠那里', '唔嗯'] : const ['痒！', '别碰肚子', '哈哈不要'],
+      'navel' => warm ? const ['肚脐…很敏感的', '……别戳', '嗯…'] : const ['哇啊！', '那里不行', '别碰肚脐'],
+      'waist' || 'waist_l' || 'waist_r' => warm ? const ['腰要软了…', '……嗯', '搂着就好'] : const ['别搂腰', '痒死了', '唔！'],
+      'hip' => warm ? const ['……嗯', '别搂太紧', '这样可以'] : const ['你手往哪放', '别乱来'],
+      'groin' => warm ? const ['……你轻一点', '嗯…别太急', '这样…可以的'] : const ['不行', '手拿开', '真的不行'],
+      'thigh' || 'thigh_l' || 'thigh_r' => warm ? const ['……可以', '再往上就不行了', '腿有点软'] : const ['你摸哪呢', '大腿不行', '嗯…'],
+      'knee' || 'knee_l' || 'knee_r' => warm ? const ['……嗯', '膝盖怕痒', '轻点'] : const ['唔！', '别碰膝盖', '有点痒'],
+      'shin' || 'shin_l' || 'shin_r' || 'legs' => warm ? const ['……嗯', '腿给你靠', '好痒'] : const ['痒痒的', '别挠', '哈哈'],
+      'foot' || 'foot_l' || 'foot_r' => warm ? const ['脚有点冷…', '你手好暖', '……嗯'] : const ['哇！', '脚别碰', '痒'],
+      'tail' || 'tail_tip' => warm ? const ['尾巴…很敏感的', '轻一点', '嗯…'] : const ['尾巴不能碰！', '别揪', '唔！'],
+      _ => warm ? const ['……嗯', '再待一会儿', '唔'] : const ['唔…', '你碰到我了', '嗯？'],
+    };
+  }
+
+  /// 这一下该记成什么，进她的记忆（也就进了之后所有对话的上下文）。
+  String? _touchNote(String zone, String kind) {
+    final where = _zoneNames[zone];
+    return switch (kind) {
+      'hug' => '对方刚才抱了抱你',
+      'tease' => '对方刚才连着戳你',
+      'shake' => '对方刚才摇晃手机，把你晃晕了',
+      'pat' => '对方刚才摸了摸你的头',
+      'refuse' => '对方碰到了你的${where ?? '身体'}，你躲开了',
+      'stroke' => '对方的手在你${where ?? '身上'}上抹了一下',
+      'hold' => '对方把手按在你的${where ?? '身体'}上没拿开',
+      _ => where == null ? null : '对方刚才碰到了你的$where',
+    };
+  }
+
+  void _onTouch(String zone, String kind, CompanionTouchFeel feel) {
     _initiative.activate(this);
     _retireGreeting();
     if (_showTouchHint) {
@@ -887,9 +969,10 @@ class _CompanionPageState extends ConsumerState<CompanionPage>
       unawaited(SharedPreferences.getInstance().then((p) => p.setBool(_hintDoneKey, true)));
     }
     final l10n = context.l10n;
-    // At the v2 Close tier she has a fonder word too.
     final close = _bondTier >= 3;
+    // 身体先反应（stage.js 已经做了表情和动作），这里只给她的话。
     final lines = switch ((zone, kind)) {
+      (_, 'refuse') => _refuseLines[feel.sense] ?? _refuseLines[2]!,
       (_, 'hug') => [
         ..._linesFor('hug', [l10n.companionHug1, l10n.companionHug2, l10n.companionHug3]),
         if (close) ..._linesFor('hugClose', [l10n.companionHugClose]),
@@ -911,6 +994,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage>
         if (_ownWhale) l10n.companionTapTail3,
       ]),
       ('legs', _) => _linesFor('tapLegs', [l10n.companionTapLegs1, l10n.companionTapLegs2]),
+      _ when _zoneNames.containsKey(zone) => _feelLines(zone, kind, feel),
       _ => _linesFor('tapBody', [
         l10n.companionTapBody1,
         l10n.companionTapBody2,
@@ -918,19 +1002,93 @@ class _CompanionPageState extends ConsumerState<CompanionPage>
       ]),
     };
     // A hug is affection the way a pat is: the same event for her state.
+    if (kind != 'refuse') {
+      _partTouches[zone] = (_partTouches[zone] ?? 0) + 1;
+      _partTouchesSave?.cancel();
+      _partTouchesSave = Timer(const Duration(seconds: 2), _savePartTouches);
+    }
     if (kind == 'pat' || kind == 'hug') _event('pet');
-    _remember('pet', switch ((zone, kind)) {
-      (_, 'hug') => '对方刚才抱了抱你',
-      (_, 'tease') => '对方刚才连着戳你',
-      (_, 'shake') => '对方刚才摇晃手机，把你晃晕了',
-      (_, 'pat') => '对方刚才摸了摸你的头',
-      ('tail', _) => '对方刚才碰了你的尾巴',
-      ('face', _) => '对方刚才戳了戳你的脸',
-      _ => null,
-    });
-    if (_running || _sending) return; // Her words first.
+    _remember('pet', _touchNote(zone, kind));
+    if (_running || _sending) {
+      // Her words first — but this touch is not forgotten.
+      _pendingTouch = (zone, kind, feel);
+      return;
+    }
     final line = _pick(lines);
     _say(line);
+    // 被拒绝时不打扰模型：那是「不行」，不该由模型即兴发挥。
+    if (kind != 'refuse') unawaited(_touchReply(zone, kind, feel));
+  }
+
+  Future<void> _loadPartTouches() async {
+    try {
+      final raw = (await SharedPreferences.getInstance()).getString(_partTouchesKey);
+      if (raw == null) return;
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return;
+      for (final entry in decoded.entries) {
+        final key = entry.key;
+        final value = entry.value;
+        if (key is String && value is num) _partTouches[key] = value.toInt();
+      }
+    } on Object {
+      // 读不到就当没碰过。
+    }
+  }
+
+  Future<void> _savePartTouches() async {
+    try {
+      await (await SharedPreferences.getInstance()).setString(_partTouchesKey, jsonEncode(_partTouches));
+    } on Object {
+      // 下次再存。
+    }
+  }
+
+  static const _partTouchesKey = 'companion_part_touches_v1';
+
+  /// 让她自己说这一下：把部位、力度、亲密度和她的人设丢给模型，现写一句短话。
+  /// 拿不到密钥、超时、或者她正在回别的话，就保留刚说的那句本地台词。
+  Future<void> _touchReply(String zone, String kind, CompanionTouchFeel feel) async {
+    final apiKey = ref.read(settingsProvider).apiKey.trim();
+    if (apiKey.isEmpty || _touchReplyBusy) return;
+    _touchReplyBusy = true;
+    final token = ++_touchToken;
+    try {
+      final persona = ref.read(companionPersonaProvider);
+      final name = ref.read(companionNameProvider) ?? _character.name ?? '';
+      final closeness = _vitals?.vitals.closeness ?? 0;
+      final where = _zoneNames[zone] ?? '身体';
+      final hard = feel.strength > 1.2 ? '偏重' : (feel.strength < 0.8 ? '很轻' : '一般');
+      final system = StringBuffer();
+      system.writeln(name.isEmpty ? '你是一个陪伴角色。' : '你就是$name。');
+      if (persona.custom.trim().isNotEmpty) system.writeln('你的设定：\n${persona.custom.trim()}');
+      if (persona.callMe.trim().isNotEmpty) system.writeln('你叫对方「${persona.callMe.trim()}」。');
+      system
+        ..writeln('对方刚伸手碰到了你的$where，力度$hard。')
+        ..writeln('这一处到今天为止被碰过 ${_partTouches[zone] ?? 0} 次。')
+        ..writeln('你们现在的亲密度 ${closeness.toStringAsFixed(2)}（0 是刚认识，1 是很亲近）。')
+        ..writeln('只写你脱口而出的一句话：不超过 18 个字，第一人称，语气要符合你们现在的关系。')
+        ..writeln('不要旁白、不要动作描写、不要括号、不要引号、不要解释。');
+      final text = StringBuffer();
+      await for (final delta in streamCompanionReply(
+        client: ref.read(companionLightClientProvider)(),
+        apiKey: apiKey,
+        system: system.toString(),
+        lines: [CompanionLine.user('（对方碰了你的$where）')],
+        maxTokens: 96,
+      )) {
+        text.write(delta);
+        if (text.length > 60) break;
+      }
+      final line = text.toString().replaceAll(RegExp(r'["\u300c\u300d\r\n]'), '').trim();
+      if (!mounted || token != _touchToken || line.isEmpty || line.length > 40) return;
+      if (_running || _sending) return;
+      _say(line);
+    } on Object {
+      // 生成失败：本地那句已经在气泡里了。
+    } finally {
+      _touchReplyBusy = false;
+    }
   }
 
   /// How long an activity lasts when this host can't keep it (the bridge's
@@ -2306,7 +2464,18 @@ class _CompanionPageState extends ConsumerState<CompanionPage>
         _running = running;
         _needsAttention = attention;
       });
+      if (!running && !_sending) _flushPendingTouch();
     }
+  }
+
+  /// 她说完那句之后，把手放上来的那一下补上。
+  void _flushPendingTouch() {
+    final pending = _pendingTouch;
+    if (pending == null) return;
+    _pendingTouch = null;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !_running && !_sending) _onTouch(pending.$1, pending.$2, pending.$3);
+    });
   }
 
   /// Capture the reply rendered by this frame. Returning to this room can

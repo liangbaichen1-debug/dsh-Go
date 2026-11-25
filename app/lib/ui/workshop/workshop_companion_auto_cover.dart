@@ -83,7 +83,7 @@ class _WorkshopCompanionAutoCoverState extends ConsumerState<WorkshopCompanionAu
               onCover: _finish,
               onReady: () {},
               onFailed: (_) => _finish(null),
-              onTouch: (_, _) {},
+              onTouch: (_, _, _) {},
               onWake: () {},
               onMood: (_) {},
               onObject: (_) {},
