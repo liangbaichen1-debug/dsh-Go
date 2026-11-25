@@ -25,5 +25,6 @@ L=[('ear','耳朵'),('chest','胸口'),('belly','小腹'),('hip','腰'),('groin'
 e=c.replace("      _ => null,",''.join("      ('%s', _) => '对方刚才碰了你的%s',\n"%t for t in L)+"      _ => null,")
 open(D,'w',encoding='utf-8').write(d.replace(c,e))
 PY
+python3 tools/zone-split.py
 cd app&&flutter pub get
-DSH_SIDE_BUILD=1 flutter build apk --debug --flavor arm64 --target-platform android-arm64 --build-number 11260340 --dart-define=DSH_APP_VERSION=1.4.0+11260340
+flutter build apk --debug --flavor arm64 --target-platform android-arm64 --build-number 11260340 --dart-define=DSH_APP_VERSION=1.4.0+11260340
