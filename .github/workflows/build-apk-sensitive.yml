@@ -17,18 +17,13 @@ jobs:
           flutter-version: 3.47.9
           channel: stable
           cache: true
-      - name: 固定签名（有 secret 就用，以后覆盖安装不丢数据）
+      - name: 固定 debug 签名
         run: |
           if [ -n "${{ secrets.DSH_KEYSTORE_B64 }}" ]; then
-            echo "${{ secrets.DSH_KEYSTORE_B64 }}" | base64 -d > app/android/dsh-release.p12
-            {
-              echo "storeFile=dsh-release.p12"
-              echo "storeType=PKCS12"
-              echo "storePassword=${{ secrets.DSH_STORE_PASSWORD }}"
-              echo "keyAlias=dsh"
-              echo "keyPassword=${{ secrets.DSH_KEY_PASSWORD }}"
-            } > app/android/key.properties
-            echo signed-with-repo-key
+            mkdir -p "$HOME/.android"
+            echo "${{ secrets.DSH_KEYSTORE_B64 }}" | base64 -d > "$HOME/.android/debug.keystore"
+            rm -f app/android/key.properties app/android/dsh-release.p12
+            echo signed-with-stable-debug-key
           else
             echo no-signing-secret
           fi
