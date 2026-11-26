@@ -1683,7 +1683,7 @@
           setEmotion(r.refuse ?? 'confused', 2000);
           playAction('pushback');
         }
-        post({ type: 'touch', zone: held.zone, kind: willing ? 'hold' : 'refuse', sense, over: 0, strength: 1.35 });
+        post({ type: 'touch', zone: held.zone, kind: willing ? 'hold' : 'refuse', sense, over: 0, strength: 1.35, ...touchMeta() });
         if (willing) { heatAdd(held.zone, 0.12, held.x, held.y); }
       }, 1200);
     }
@@ -1714,7 +1714,7 @@
     setEmotion(bondStep() === 0 ? 'shy' : 'happy', 30000);
     scene.marks.hearts(held.x, held.y - 18, 2);
     heatAdd(held.zone, 0.04, held.x, held.y);
-    post({ type: 'touch', zone: held.zone, kind: 'hug' });
+    post({ type: 'touch', zone: held.zone, kind: 'hug', ...touchMeta() });
   }
 
   /** A snack carried from the dish: into her mouth if let go there, else back to the dish. */
@@ -1786,7 +1786,7 @@
         } else {
           setEmotion(r.refuse ?? 'confused', 1800);
         }
-        post({ type: 'touch', zone, kind: willing ? 'stroke' : 'refuse', sense, over: 0, strength: 1 });
+        post({ type: 'touch', zone, kind: willing ? 'stroke' : 'refuse', sense, over: 0, strength: 1, ...touchMeta() });
         if (willing) { heatAdd(zone, 0.06, e.clientX, e.clientY); stripZone(zone); }
       }
     }
@@ -1850,7 +1850,13 @@
     chin: 0.9, cheek_l: 0.9, cheek_r: 0.9, face: 0.8, jaw: 0.8, tail: 1.0,
     knee: 0.7, calf: 0.6, ankle: 0.6, foot: 0.6, hair: 0.4, head: 0.4,
   };
-  const heat = { value: 0, zone: null, at: null, climaxAt: 0, afterglow: 0 };
+  const heat = { value: 0, zone: null, at: null, climaxAt: 0, afterglow: 0, streak: 0, since: 0, lastAt: 0 };
+
+  /** 这一处被连着碰了多少次、多久——给模型判断「还是在摸同一处」用。 */
+  function touchMeta() {
+    const now = performance.now();
+    return { heat: Math.round(heat.value * 100) / 100, streak: heat.streak, streakMs: heat.since ? Math.round(now - heat.since) : 0 };
+  }
 
   /** 这一次碰到多敏感的地方（1 是普通，2 是私处那种）。 */
   function heatWeight(zone) { return HEAT_SOFT[zone] ?? 0.8; }
@@ -1860,6 +1866,10 @@
     const now = performance.now();
     const scale = now < heat.afterglow ? 0.35 : 1;
     heat.value = clamp(heat.value + amount * heatWeight(zone) * scale, 0, 1.2);
+    // 同一个部位、间隔不超过 3 秒 → 算「还在摸同一处」，次数往下累。
+    if (zone === heat.zone && now - (heat.lastAt || 0) < 3000) heat.streak += 1;
+    else { heat.streak = 1; heat.since = now; }
+    heat.lastAt = now;
     heat.zone = zone;
     if (Number.isFinite(x)) heat.at = [x, y];
     if (heat.value >= 1 && now > heat.climaxAt) climax(zone, x, y);
@@ -1956,7 +1966,7 @@
       life.poke.z.v += side * 45 * strength * (1 - 0.5 * over);
       if (zone === 'tail') hop(0.8);
     }
-    post({ type: 'touch', zone, kind: 'tap', sense, step, over: Math.round(over * 100) / 100 });
+    post({ type: 'touch', zone, kind: 'tap', sense, step, over: Math.round(over * 100) / 100, ...touchMeta() });
   }
 
   // ── Commands from Flutter ───────────────────────────────────────────────
