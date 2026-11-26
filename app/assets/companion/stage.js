@@ -1684,6 +1684,7 @@
           playAction('pushback');
         }
         post({ type: 'touch', zone: held.zone, kind: willing ? 'hold' : 'refuse', sense, over: 0, strength: 1.35 });
+        if (willing) { heatAdd(held.zone, 0.12, held.x, held.y); }
       }, 1200);
     }
   });
@@ -1712,6 +1713,7 @@
     // Shy the first times; glad once she knows you.
     setEmotion(bondStep() === 0 ? 'shy' : 'happy', 30000);
     scene.marks.hearts(held.x, held.y - 18, 2);
+    heatAdd(held.zone, 0.04, held.x, held.y);
     post({ type: 'touch', zone: held.zone, kind: 'hug' });
   }
 
@@ -1771,7 +1773,8 @@
     if (press.zone && press.travel > 26 && !press.dragging && press.zone !== 'head' && pointers.size === 1) {
       const now = performance.now();
       if (!press.strokeAt || now > press.strokeAt) {
-        press.strokeAt = now + 260;
+        // 260ms 一次会把 Flutter 的「说话」逼成连珠炮；身体反应照旧每帧在动，只让上报慢下来。
+        press.strokeAt = now + 800;
         const point = toModel(e.clientX, e.clientY);
         const zone = zoneAt(point.x, point.y) ?? press.zone;
         const r = TAPS[zone] ?? TAPS.body;
@@ -1784,6 +1787,7 @@
           setEmotion(r.refuse ?? 'confused', 1800);
         }
         post({ type: 'touch', zone, kind: willing ? 'stroke' : 'refuse', sense, over: 0, strength: 1 });
+        if (willing) { heatAdd(zone, 0.06, e.clientX, e.clientY); stripZone(zone); }
       }
     }
     if (press.zone === 'head' && press.travel > 26 && !press.hugging) {
@@ -1838,6 +1842,73 @@
   if (!FLOAT) canvas.addEventListener('pointercancel', endPointer);
   if (!FLOAT) canvas.addEventListener('lostpointercapture', endPointer);
 
+  // ── 刺激量：连着被弄会累积，攒够了才失控 ──────────────────────────────
+  // 不是数值游戏：松手就凉，只有一直弄才堆得起来。
+  const HEAT_SOFT = {
+    groin: 2.0, inner_thigh: 1.8, chest: 1.5, navel: 1.4, waist: 1.3, hip: 1.2,
+    neck: 1.2, thigh: 1.1, ear_l: 1.1, ear_r: 1.1, belly: 1.0, collarbone: 1.0,
+    chin: 0.9, cheek_l: 0.9, cheek_r: 0.9, face: 0.8, jaw: 0.8, tail: 1.0,
+    knee: 0.7, calf: 0.6, ankle: 0.6, foot: 0.6, hair: 0.4, head: 0.4,
+  };
+  const heat = { value: 0, zone: null, at: null, climaxAt: 0, afterglow: 0 };
+
+  /** 这一次碰到多敏感的地方（1 是普通，2 是私处那种）。 */
+  function heatWeight(zone) { return HEAT_SOFT[zone] ?? 0.8; }
+
+  /** 一次触碰往上涨多少。攒满 1 就失控一次，之后二十秒不容易再攒。 */
+  function heatAdd(zone, amount, x, y) {
+    const now = performance.now();
+    const scale = now < heat.afterglow ? 0.35 : 1;
+    heat.value = clamp(heat.value + amount * heatWeight(zone) * scale, 0, 1.2);
+    heat.zone = zone;
+    if (Number.isFinite(x)) heat.at = [x, y];
+    if (heat.value >= 1 && now > heat.climaxAt) climax(zone, x, y);
+  }
+
+  /** 手指离开就凉下来：每秒掉 8%。 */
+  function heatStep(dt) {
+    if (pointers.size === 0 && heat.value > 0) {
+      heat.value = Math.max(0, heat.value - (heat.value * 0.08 + 0.01) * dt);
+    }
+  }
+
+  /** 到顶：身体先垮，话交给 Flutter。 */
+  function climax(zone, x, y) {
+    const now = performance.now();
+    heat.climaxAt = now + 4000;
+    heat.afterglow = now + 20000;
+    heat.value = 0.28;
+    setEmotion('surprised', 5200);
+    playAction('squirm');
+    const [px, py] = heat.at ?? toScreen(0, 0.55);
+    scene.marks.hearts(px, py - 18, 3);
+    post({ type: 'touch', zone: zone ?? 'body', kind: 'climax', sense: 3, over: 1, strength: 1 });
+  }
+
+  // ── 衣服：一直被针对的那一处，会被真的卸下来 ─────────────────────────
+  // 前几下只是按住、凶回去，够次数了才真的掉——这就是「硬来」的落点。
+  const garments = [
+    { item: 'shoes', zone: 'foot', param: 'Clothes4', value: 1, need: 2, hits: 0, off: false },
+    { item: 'chest', zone: 'chest', param: 'Clothes3', value: 1, need: 3, hits: 0, off: false },
+    { item: 'skirt', zone: 'hip', param: 'Clothes1', value: 0, need: 4, hits: 0, off: false },
+  ];
+
+  function stripZone(zone) {
+    const g = garments.find((it) => it.zone === zone && !it.off);
+    if (!g) return;
+    g.hits += 1;
+    if (g.hits < g.need) {
+      setEmotion('angry', 1500);
+      return;
+    }
+    if (model?.setRaw(g.param, g.value)) {
+      g.off = true;
+      setEmotion('surprised', 4200);
+      playAction('recoil');
+      post({ type: 'touch', zone: g.zone, kind: 'strip', sense: 3, over: 1, strength: 1, item: g.item });
+    }
+  }
+
   function tap(zone, clientX, pressure = 1) {
     const now = performance.now();
     taps.push(now);
@@ -1874,6 +1945,8 @@
     const emotion = over > 0.5 && sense >= 1 ? 'shy' : reaction.emotion;
     setEmotion(emotion, Math.round((reaction.hold ?? 1500) * (0.85 + 0.35 * over)));
     playAction(reaction.action);
+    heatAdd(zone, 0.08, clientX, toScreen(0, 0.5)[1]);
+    stripZone(zone);
     if (reaction.tail) life.tailKick = 1;
     if (!REDUCED) {
       life.poke.x.v += side * -70 * strength * (1 - 0.5 * over);
@@ -2094,6 +2167,7 @@
     const dt = clamp((ts - last) / 1000, 0.001, 0.05);
     last = ts;
     life.hop.step(0, dt);
+    heatStep(dt);
     resize();
     model.tick(dt, animate);
     drawCharacter(projection());
