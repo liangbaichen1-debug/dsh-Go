@@ -515,7 +515,13 @@ class _CompanionPageState extends ConsumerState<CompanionPage>
       mapHandoff: _mapHandoff,
     );
     _agent.addListener(_onAgentChanged);
-    if (_attachment.replyId != null) _onAgentChanged();
+    if (_attachment.replyId != null) {
+      // 第一帧之前读不到 Localizations：把「已经有一条回复在等」的补显挪到下一帧。
+      // 否则 initState 里走 _failureText/context.l10n 会直接红屏——小屋发不出话就卡在这。
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _onAgentChanged();
+      });
+    }
     ref.listenManual(companionEffectiveVoiceProvider, (_, settings) {
       if (settings != null) unawaited(_prepareVoice(settings));
     }, fireImmediately: true);
