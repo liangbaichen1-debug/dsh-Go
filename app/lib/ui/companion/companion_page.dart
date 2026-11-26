@@ -246,6 +246,9 @@ class _CompanionPageState extends ConsumerState<CompanionPage>
   /// 一次只让一句由模型现写；后到的触摸不排队，等这句说完再说。
   bool _touchReplyBusy = false;
   int _touchToken = 0;
+
+  /// 第一帧之后才处理触摸：舞台比页面先就绪，早到的触摸读不到 Localizations。
+  bool _readyForTouch = false;
   /// 她正在回别的话时被碰了一下：等这句说完再补反应，而不是丢掉。
   (String, String, CompanionTouchFeel)? _pendingTouch;
   /// 每一处到今天为止被碰过多少次：同一个地方被碰熟了，反应就会变。
@@ -431,8 +434,12 @@ class _CompanionPageState extends ConsumerState<CompanionPage>
     // Anonymous usage statistics: the room was opened once more.
     ref.read(usageStatsProvider.notifier).count(UsageCount.room);
     _initiative = ref.read(companionInitiativeProvider);
-    // 哪儿被碰惯了：开机读回来，她记得。
-    unawaited(_loadPartTouches());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _readyForTouch = true;
+      // 哪儿被碰惯了：开机读回来，她记得。
+      unawaited(_loadPartTouches());
+    });
     // How often she may speak up: the person's pick, followed as it changes.
     // The gate keeps the owner's clocks, so a line's deadline means the same to both.
     _clock = ref.read(companionInitiativeClockProvider);
@@ -959,6 +966,9 @@ class _CompanionPageState extends ConsumerState<CompanionPage>
   }
 
   void _onTouch(String zone, String kind, CompanionTouchFeel feel) {
+    // 舞台会在页面 initState 完成之前就报触摸。那时候碰 context.l10n 或
+    // setState 会直接红屏（dependOnInheritedWidgetOfExactType before initState）。
+    if (!mounted || !_readyForTouch) return;
     _initiative.activate(this);
     _retireGreeting();
     if (_showTouchHint) {
