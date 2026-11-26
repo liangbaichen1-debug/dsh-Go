@@ -1887,10 +1887,12 @@
 
   // ── 衣服：一直被针对的那一处，会被真的卸下来 ─────────────────────────
   // 前几下只是按住、凶回去，够次数了才真的掉——这就是「硬来」的落点。
+  // 用模型自己的换装表情（素材包里就有「裙子切换 / 胸口衣服 / 脱鞋」），
+  // 写参数在这台上会被 tick 覆盖，播表情才真的换得掉。
   const garments = [
-    { item: 'shoes', zone: 'foot', param: 'Clothes4', value: 1, need: 2, hits: 0, off: false },
-    { item: 'chest', zone: 'chest', param: 'Clothes3', value: 1, need: 3, hits: 0, off: false },
-    { item: 'skirt', zone: 'hip', param: 'Clothes1', value: 0, need: 4, hits: 0, off: false },
+    { item: 'shoes', zone: 'foot', expression: '脱鞋', need: 2, hits: 0, off: false },
+    { item: 'chest', zone: 'chest', expression: '胸口衣服', need: 3, hits: 0, off: false },
+    { item: 'skirt', zone: 'hip', expression: '裙子切换', need: 4, hits: 0, off: false },
   ];
 
   function stripZone(zone) {
@@ -1901,7 +1903,8 @@
       setEmotion('angry', 1500);
       return;
     }
-    if (model?.setRaw(g.param, g.value)) {
+    if (model && g.expression && model.expressions.has(g.expression)) {
+      model.startExpression(g.expression);
       g.off = true;
       setEmotion('surprised', 4200);
       playAction('recoil');
