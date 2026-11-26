@@ -254,6 +254,10 @@ class _CompanionPageState extends ConsumerState<CompanionPage>
   /// 触摸说话的两道闸。抚摸一次会连着来很多下，没有闸就是每一下换一句、每一下问一次模型。
   DateTime _lastTouchSayAt = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime _lastTouchAskAt = DateTime.fromMillisecondsSinceEpoch(0);
+  /// 最近几句触摸台词（她说的）：进 prompt，让她别重复自己。
+  final List<String> _recentTouchLines = [];
+  /// 已经被卸掉的衣服（strip 事件）：让模型知道她现在什么状态。
+  final Set<String> _undressed = {};
   /// 这次没问成（正在忙/她正在回话）的触摸：留最后一次，等空下来补问，不丢。
   (String, String, CompanionTouchFeel)? _queuedTouch;
 
@@ -1037,6 +1041,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage>
       ]),
     };
     // A hug is affection the way a pat is: the same event for her state.
+    if (kind == 'strip') _undressed.add(_zoneNames[zone] ?? '衣服');
     if (kind != 'refuse') {
       _partTouches[zone] = (_partTouches[zone] ?? 0) + 1;
       _partTouchesSave?.cancel();
@@ -1128,22 +1133,34 @@ class _CompanionPageState extends ConsumerState<CompanionPage>
         })
         ..writeln('这一处到今天为止被碰过 ${_partTouches[zone] ?? 0} 次。')
         ..writeln('你们现在的亲密度 ${closeness.toStringAsFixed(2)}（0 是刚认识，1 是很亲近）。')
-        ..writeln('只写你脱口而出的一句话：不超过 18 个字，第一人称，语气要符合你们现在的关系。')
-        ..writeln('不要旁白、不要动作描写、不要括号、不要引号、不要解释。');
+        ..writeln('刺激量 ${feel.heat.toStringAsFixed(2)}（0 没事，0.55 开始撑不住，1.0 就绷断了）。')
+        ..writeln(feel.streak > 1
+            ? '这一处对方已经连着碰了 ${feel.streak} 下、约 ${(feel.streakMs / 1000).toStringAsFixed(1)} 秒，还没停。'
+            : '这是刚碰到这一处。')
+        ..writeln(_undressed.isEmpty ? '她身上的衣服还是完整的。' : '她已经被卸掉了：${_undressed.join('、')}。')
+        ..writeln(_recentTouchLines.isEmpty
+            ? '刚才还没说过话。'
+            : '你刚才已经说过这些，不要重复、也不要换汤不换药：${_recentTouchLines.join(' / ')}')
+        ..writeln('写你这一下的反应：一句话，第一人称，30 字以内。')
+        ..writeln('要接着上一句往下走：同一个地方被连着碰，就一次比一次乱、一次比一次软（或一次比一次凶），'
+            '不要每句都像刚被碰第一下；刺激量越高，话越短越碎。')
+        ..writeln('不要旁白、不要动作描写、不要括号、不要引号、不要解释，不要重复上面列过的句子。');
       final text = StringBuffer();
       await for (final delta in streamCompanionReply(
         client: ref.read(companionLightClientProvider)(),
         apiKey: apiKey,
         system: system.toString(),
         lines: [CompanionLine.user('（对方碰了你的$where）')],
-        maxTokens: 96,
+        maxTokens: 180,
       )) {
         text.write(delta);
         if (text.length > 60) break;
       }
       final line = text.toString().replaceAll(RegExp(r'["\u300c\u300d\r\n]'), '').trim();
       if (!mounted || token != _touchToken) return;
-      if (line.isEmpty || line.length > 40) { fallback?.call(); return; }
+      if (line.isEmpty || line.length > 60) { fallback?.call(); return; }
+      _recentTouchLines.add(line);
+      if (_recentTouchLines.length > 5) _recentTouchLines.removeAt(0);
       if (_running || _sending) { _queuedTouch = (zone, kind, feel); return; }
       _say(line);
       _lastTouchSayAt = DateTime.now();
