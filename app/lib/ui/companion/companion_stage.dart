@@ -94,20 +94,38 @@ class CompanionStageController {
 /// requires her to know the person (`sense`), how far past that this touch got
 /// (`over`, 0–1), and how hard the finger pressed (`strength`, 0.4–1.6).
 class CompanionTouchFeel {
-  const CompanionTouchFeel({this.sense = 0, this.over = 0, this.strength = 1});
+  const CompanionTouchFeel({
+    this.sense = 0,
+    this.over = 0,
+    this.strength = 1,
+    this.heat = 0,
+    this.streak = 0,
+    this.streakMs = 0,
+  });
 
   final int sense;
   final double over;
   final double strength;
+  /// 刺激量 0–1.2：舞台那边按部位敏感度累积，越高越接近绷不住。
+  final double heat;
+  /// 同一个部位被连着碰了多少下、持续多久（毫秒），用来撑住「还在摸同一处」的连续性。
+  final int streak;
+  final int streakMs;
 
   static CompanionTouchFeel fromMessage(Map message) {
     final sense = message['sense'];
     final over = message['over'];
     final strength = message['strength'];
+    final heat = message['heat'];
+    final streak = message['streak'];
+    final streakMs = message['streakMs'];
     return CompanionTouchFeel(
       sense: sense is num ? sense.toInt() : 0,
       over: over is num ? over.toDouble() : 0,
       strength: strength is num ? strength.toDouble() : 1,
+      heat: heat is num ? heat.toDouble() : 0,
+      streak: streak is num ? streak.toInt() : 0,
+      streakMs: streakMs is num ? streakMs.toInt() : 0,
     );
   }
 }
