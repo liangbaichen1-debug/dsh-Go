@@ -983,6 +983,10 @@ class _CompanionAgentVisit {
     } on Object catch (error) {
       if (current()) failed(error, retry: raw);
     } finally {
+      // 先把 preparing 放开，再去收尾工具。以前只在 current() 为真时放开，
+      // 一旦这一轮中途失去当前窗口（切页、resident 接管、清空），preparing 会永久停在 true，
+      // 之后每次发送都在 submit 第一行静默 return——界面就只剩那句「这句话没送出去」。
+      preparing = false;
       // Fresh foreground work is handed to its original detail route only
       // after every tool/picker in this turn finishes. No active scope moves.
       try {
