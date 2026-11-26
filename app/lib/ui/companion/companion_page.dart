@@ -254,6 +254,8 @@ class _CompanionPageState extends ConsumerState<CompanionPage>
   /// 触摸说话的两道闸。抚摸一次会连着来很多下，没有闸就是每一下换一句、每一下问一次模型。
   DateTime _lastTouchSayAt = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime _lastTouchAskAt = DateTime.fromMillisecondsSinceEpoch(0);
+  /// 这次没问成（正在忙/她正在回话）的触摸：留最后一次，等空下来补问，不丢。
+  (String, String, CompanionTouchFeel)? _queuedTouch;
 
   /// 每一处到今天为止被碰过多少次：同一个地方被碰熟了，反应就会变。
   final Map<String, int> _partTouches = {};
@@ -1051,14 +1053,22 @@ class _CompanionPageState extends ConsumerState<CompanionPage>
     // 模型 2.5 秒最多问一次；到顶和衣服被卸掉这种节点不受这两道闸限制。
     final now = DateTime.now();
     final peak = kind == 'climax' || kind == 'strip';
-    if (peak || now.difference(_lastTouchSayAt).inMilliseconds >= 1200) {
+    // 配了 key 就只让模型说话：本地台词不再抢在模型前面（以前是本地先一句、模型再来一句，
+    // 两句叠在一起）。模型没回来/失败时才退回本地台词。
+    final hasKey = ref.read(settingsProvider).apiKey.trim().isNotEmpty;
+    if (!hasKey && (peak || now.difference(_lastTouchSayAt).inMilliseconds >= 1200)) {
       _lastTouchSayAt = now;
       _say(_pick(lines));
     }
     // 被拒绝时不打扰模型：那是「不行」，不该由模型即兴发挥。
     if (kind != 'refuse' && (peak || now.difference(_lastTouchAskAt).inMilliseconds >= 2500)) {
       _lastTouchAskAt = now;
-      unawaited(_touchReply(zone, kind, feel));
+      unawaited(_touchReply(zone, kind, feel, fallback: () {
+        if (mounted && !_running && !_sending && now.difference(_lastTouchSayAt).inMilliseconds >= 800) {
+          _lastTouchSayAt = DateTime.now();
+          _say(_pick(lines));
+        }
+      }));
     }
   }
 
@@ -1090,9 +1100,11 @@ class _CompanionPageState extends ConsumerState<CompanionPage>
 
   /// 让她自己说这一下：把部位、力度、亲密度和她的人设丢给模型，现写一句短话。
   /// 拿不到密钥、超时、或者她正在回别的话，就保留刚说的那句本地台词。
-  Future<void> _touchReply(String zone, String kind, CompanionTouchFeel feel) async {
+  Future<void> _touchReply(String zone, String kind, CompanionTouchFeel feel, {void Function()? fallback}) async {
     final apiKey = ref.read(settingsProvider).apiKey.trim();
-    if (apiKey.isEmpty || _touchReplyBusy) return;
+    if (apiKey.isEmpty) return;
+    // 上一次还没回来：留这最后一次，回来后再补，而不是直接丢掉。
+    if (_touchReplyBusy) { _queuedTouch = (zone, kind, feel); return; }
     _touchReplyBusy = true;
     final token = ++_touchToken;
     try {
@@ -1130,13 +1142,26 @@ class _CompanionPageState extends ConsumerState<CompanionPage>
         if (text.length > 60) break;
       }
       final line = text.toString().replaceAll(RegExp(r'["\u300c\u300d\r\n]'), '').trim();
-      if (!mounted || token != _touchToken || line.isEmpty || line.length > 40) return;
-      if (_running || _sending) return;
+      if (!mounted || token != _touchToken) return;
+      if (line.isEmpty || line.length > 40) { fallback?.call(); return; }
+      if (_running || _sending) { _queuedTouch = (zone, kind, feel); return; }
       _say(line);
+      _lastTouchSayAt = DateTime.now();
     } on Object {
-      // 生成失败：本地那句已经在气泡里了。
+      // 生成失败：退回本地台词，别让她一声不响。
+      fallback?.call();
     } finally {
       _touchReplyBusy = false;
+      final queued = _queuedTouch;
+      _queuedTouch = null;
+      if (queued != null && mounted) {
+        final (z, k, f) = queued;
+        _lastTouchAskAt = DateTime.now();
+        unawaited(Future<void>.delayed(
+          const Duration(milliseconds: 700),
+          () { if (mounted) _touchReply(z, k, f); },
+        ));
+      }
     }
   }
 
