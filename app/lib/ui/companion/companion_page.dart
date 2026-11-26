@@ -251,6 +251,10 @@ class _CompanionPageState extends ConsumerState<CompanionPage>
   bool _readyForTouch = false;
   /// 她正在回别的话时被碰了一下：等这句说完再补反应，而不是丢掉。
   (String, String, CompanionTouchFeel)? _pendingTouch;
+  /// 触摸说话的两道闸。抚摸一次会连着来很多下，没有闸就是每一下换一句、每一下问一次模型。
+  DateTime _lastTouchSayAt = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime _lastTouchAskAt = DateTime.fromMillisecondsSinceEpoch(0);
+
   /// 每一处到今天为止被碰过多少次：同一个地方被碰熟了，反应就会变。
   final Map<String, int> _partTouches = {};
   Timer? _partTouchesSave;
@@ -959,6 +963,8 @@ class _CompanionPageState extends ConsumerState<CompanionPage>
       'shake' => '对方刚才摇晃手机，把你晃晕了',
       'pat' => '对方刚才摸了摸你的头',
       'refuse' => '对方碰到了你的${where ?? '身体'}，你躲开了',
+      'climax' => '对方把你弄到了顶点，你还没缓过来',
+      'strip' => '对方把你的衣服弄开了',
       'stroke' => '对方的手在你${where ?? '身上'}上抹了一下',
       'hold' => '对方把手按在你的${where ?? '身体'}上没拿开',
       _ => where == null ? null : '对方刚才碰到了你的$where',
@@ -982,6 +988,17 @@ class _CompanionPageState extends ConsumerState<CompanionPage>
     final close = _bondTier >= 3;
     // 身体先反应（stage.js 已经做了表情和动作），这里只给她的话。
     final lines = switch ((zone, kind)) {
+      (_, 'climax') => const [
+        '不行…要、要到了',
+        '别…别停…',
+        '唔——…',
+        '腿……软了',
+      ],
+      (_, 'strip') => const [
+        '你干嘛…',
+        '别、别动那里…',
+        '……真的脱掉了',
+      ],
       (_, 'refuse') => _refuseLines[feel.sense] ?? _refuseLines[2]!,
       (_, 'hug') => [
         ..._linesFor('hug', [l10n.companionHug1, l10n.companionHug2, l10n.companionHug3]),
@@ -1024,10 +1041,19 @@ class _CompanionPageState extends ConsumerState<CompanionPage>
       _pendingTouch = (zone, kind, feel);
       return;
     }
-    final line = _pick(lines);
-    _say(line);
+    // 抚摸是连续事件：一下一下地换台词会像复读机。气泡 1.2 秒最多换一次、
+    // 模型 2.5 秒最多问一次；到顶和衣服被卸掉这种节点不受这两道闸限制。
+    final now = DateTime.now();
+    final peak = kind == 'climax' || kind == 'strip';
+    if (peak || now.difference(_lastTouchSayAt).inMilliseconds >= 1200) {
+      _lastTouchSayAt = now;
+      _say(_pick(lines));
+    }
     // 被拒绝时不打扰模型：那是「不行」，不该由模型即兴发挥。
-    if (kind != 'refuse') unawaited(_touchReply(zone, kind, feel));
+    if (kind != 'refuse' && (peak || now.difference(_lastTouchAskAt).inMilliseconds >= 2500)) {
+      _lastTouchAskAt = now;
+      unawaited(_touchReply(zone, kind, feel));
+    }
   }
 
   Future<void> _loadPartTouches() async {
@@ -1074,7 +1100,14 @@ class _CompanionPageState extends ConsumerState<CompanionPage>
       if (persona.custom.trim().isNotEmpty) system.writeln('你的设定：\n${persona.custom.trim()}');
       if (persona.callMe.trim().isNotEmpty) system.writeln('你叫对方「${persona.callMe.trim()}」。');
       system
-        ..writeln('对方刚伸手碰到了你的$where，力度$hard。')
+        ..writeln(switch (kind) {
+          'climax' => '对方把你弄到顶了：身体已经绷不住，正在失神，话是碎的。',
+          'strip' => '对方把你的衣服卸掉了一层：先愣住，再反应。',
+          'stroke' => '对方的手在你身上来回摸，力度$hard。',
+          'hold' => '对方的手按在那里不动了，力度$hard。',
+          'hug' => '对方贴着你不放。',
+          _ => '对方刚伸手碰到了你的$where，力度$hard。',
+        })
         ..writeln('这一处到今天为止被碰过 ${_partTouches[zone] ?? 0} 次。')
         ..writeln('你们现在的亲密度 ${closeness.toStringAsFixed(2)}（0 是刚认识，1 是很亲近）。')
         ..writeln('只写你脱口而出的一句话：不超过 18 个字，第一人称，语气要符合你们现在的关系。')
