@@ -147,6 +147,8 @@ android {
                 storePassword = keyProps.getProperty("storePassword")
                 keyAlias = keyProps.getProperty("keyAlias")
                 keyPassword = keyProps.getProperty("keyPassword")
+                // 固定签名：仓库 secret 里放的是 PKCS12，JDK17 默认 JKS，这里按 key.properties 说。
+                storeType = keyProps.getProperty("storeType") ?: storeType
                 // All three schemes: AGP drops v1 for minSdk 24+, but some installers and
                 // security scanners on Chinese ROMs still read the JAR signature.
                 enableV1Signing = true
