@@ -250,7 +250,12 @@ class CompanionSessions extends Notifier<Map<String, CompanionBinding>> {
         }
       }
 
-      final sessions = owner.read(sessionsProvider.notifier);
+      // 不能从本元素 read sessionsProvider：sessionsProvider 通过
+      // companionSessionFilterProvider → companionSessions 依赖本元素，
+      // 反向 read 会命中 Riverpod 3 的元素级自依赖检查（完整模式发不出话的
+      // CircularDependencyError 就是这条）。从容器读不建立依赖边，也不进
+      // 循环检查；拿到的是同一个 SessionsController。
+      final sessions = owner.container.read(sessionsProvider.notifier);
       final id = await sessions.createForConnection(conn, autoApprove: false, isCurrent: current);
       checkCurrent();
       final model = projections?.nextModel ?? existing?.model;
