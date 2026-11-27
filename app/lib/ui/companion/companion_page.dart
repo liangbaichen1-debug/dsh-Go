@@ -2669,7 +2669,18 @@ class _CompanionPageState extends ConsumerState<CompanionPage>
 
   Future<void> _send() async {
     final raw = _input.text;
-    if (raw.trim().isEmpty || _attachment.preparing || !_attachment.isAttached) return;
+    if (raw.trim().isEmpty) return;
+    // 以前这三条任何一条为真都静默 return，界面只留一句「没送出去」。
+    // 现在把原因说出来：能复位就复位，让人再点一次就有结果。
+    if (!_attachment.isAttached) {
+      failed(Exception('伙伴窗口已脱离（isAttached=false）'), retry: raw);
+      return;
+    }
+    if (_attachment.preparingBlocked) {
+      _attachment.resetPreparing();
+      failed(Exception('上一轮还卡在准备中（preparing=true），已复位，请再发一次'), retry: raw);
+      return;
+    }
     final page = _assistantPage;
     final returnToApp = _assistantReturnToApp;
     _acted();
