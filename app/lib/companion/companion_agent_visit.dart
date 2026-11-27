@@ -189,17 +189,6 @@ class CompanionAgentResident {
   final _CompanionAgentVisit _visit;
   final CompanionAgentRoomUi _ui;
   CompanionMoves get moves => _visit.moves;
-  /// 卡死的「准备中」自动放开：每帧/每次变更都可以调用。
-  void healPreparing() {
-    final since = preparingSince;
-    if (!preparing || since == null) return;
-    if (DateTime.now().difference(since) > const Duration(seconds: 8)) {
-      preparing = false;
-      preparingSince = null;
-      changed();
-    }
-  }
-
   bool get active => _visit.active && identical(_visit.residentUi, _ui);
   CompanionMemoryOwner? get memory => active ? _visit.memory : null;
   String? get characterId => active ? _visit.characterId : null;
@@ -391,6 +380,17 @@ class _CompanionAgentVisit {
     r'^(?:(?:晚安|再见)(?:[，,\s]+(?:我)?先走了)?|(?:我)?先走了|good ?night|goodbye|bye)[。.!！]*$',
     caseSensitive: false,
   );
+
+  /// 卡死的「准备中」自动放开：页面每次收到变更都可以调。
+  void healPreparing() {
+    final since = preparingSince;
+    if (!preparing || since == null) return;
+    if (DateTime.now().difference(since) > const Duration(seconds: 8)) {
+      preparing = false;
+      preparingSince = null;
+      changed();
+    }
+  }
 
   bool get active =>
       !closed &&
