@@ -102,6 +102,10 @@ class CompanionAgentAttachment {
 
   Future<CompanionMemoryOwner> openMemory() =>
       isAttached ? _visit.openMemory() : Future.error(const DshClosedException('Companion window closed'));
+  /// 页面那一层的「正在准备」闸：卡住时页面永远发不出去，所以要能读、能复位。
+  bool get preparingBlocked => _visit.preparing;
+  void resetPreparing() => _visit.preparing = false;
+
   Future<void> submit(String raw, {String? assistantPage, bool returnToApp = false, bool voiceCall = false}) async {
     if (isAttached) {
       await _visit.submit(
@@ -117,7 +121,7 @@ class CompanionAgentAttachment {
   }
 
   Future<void> arrive({bool greet = true}) async {
-    if (isAttached) await _visit.arrive(greet: greet, windowCurrent: () => isAttached);
+    if (isAttached) { _visit.preparing = false; await _visit.arrive(greet: greet, windowCurrent: () => isAttached); }
   }
 
   Future<void> restart() async {
