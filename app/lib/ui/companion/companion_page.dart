@@ -689,6 +689,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage>
 
   void _onAgentChanged() {
     if (!mounted || !_attachment.isAttached) return;
+    _attachment.healPreparing(); // 卡死的「准备中」自动放开（>8s）
     _sending = _attachment.preparing;
     _syncAffinity();
     final id = _attachment.replyId;
@@ -4239,7 +4240,9 @@ class _CompanionPageState extends ConsumerState<CompanionPage>
                     focus: _focus,
                     hint: l10n.companionInputHint(name),
                     running: _running,
-                    busy: _sending,
+                    // 曾经是 _sending；那个值从 _attachment.preparing 同步过来，一旦卡住按钮就永久禁用、点了没反应。
+                    // 发送键只该被「她正在跑这一轮」禁用，不该被准备状态锁死。
+                    busy: _running,
                     listening: _voice.active,
                     voiceAvailable: _voice.available,
                     onSend: _send,
