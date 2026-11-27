@@ -731,6 +731,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage>
 
   @override
   void failed(Object error, {String? retry}) {
+    _diagSend('failed: $error');
     _call?.done();
     if (!mounted || !_attachment.isAttached) return;
     if (retry != null && _input.text.isEmpty) _input.text = retry;
@@ -2667,16 +2668,28 @@ class _CompanionPageState extends ConsumerState<CompanionPage>
     return sources;
   }
 
+  /// 仪器：把发送链路每一步写进 App 错误记录（diagnostics.md 的 appErrors，我在宿主侧能读到）。
+  void _diagSend(String why) {
+    FlutterError.reportError(FlutterErrorDetails(
+      exception: Exception('companion-send-blocked: $why'),
+      library: 'dsh-go-companion',
+      silent: true,
+    ));
+  }
+
   Future<void> _send() async {
     final raw = _input.text;
-    if (raw.trim().isEmpty) return;
+    _diagSend('enter len=${raw.length} sending=$_sending running=$_running attached=${_attachment.isAttached} preparing=${_attachment.preparingBlocked}');
+    if (raw.trim().isEmpty) { _diagSend('raw-empty'); return; }
     // 以前这三条任何一条为真都静默 return，界面只留一句「没送出去」。
     // 现在把原因说出来：能复位就复位，让人再点一次就有结果。
     if (!_attachment.isAttached) {
+      _diagSend('not-attached');
       failed(Exception('伙伴窗口已脱离（isAttached=false）'), retry: raw);
       return;
     }
     if (_attachment.preparingBlocked) {
+      _diagSend('preparing -> reset');
       _attachment.resetPreparing();
       failed(Exception('上一轮还卡在准备中（preparing=true），已复位，请再发一次'), retry: raw);
       return;
@@ -2689,7 +2702,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage>
     if (_voice.active || _voice.cancelling) {
       final current = _currentRoom();
       await _voice.cancel();
-      if (!mounted || !current() || _attachment.preparing) return;
+      if (!mounted || !current() || _attachment.preparing) { _diagSend('voice-cancel-abort'); return; }
     }
     _notesSelectionRoutes.clear();
     _bubbleTimer?.cancel();
