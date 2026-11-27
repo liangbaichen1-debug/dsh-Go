@@ -2,9 +2,14 @@ name: Build sensitive APK
 
 on:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: release tag
+        required: false
+        default: feel-latest
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -26,12 +31,16 @@ jobs:
             echo signed-with-stable-debug-key
           fi
       - run: bash tools/sensitive-build.sh
-      - name: 传到 0x0.st（给宿主换一条快的下载链路）
+      - name: 发布成 Release 资产（换一条快的下载链路）
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
+          TAG="${{ github.event.inputs.tag }}"
           F=app/build/app/outputs/flutter-apk/app-arm64-debug.apk
           ls -l "$F"
-          URL=$(curl -sS -A "dsh-go-build/1.0" -F "file=@$F" https://0x0.st || true)
-          echo "DOWNLOAD_URL=$URL"
+          gh release delete "$TAG" --yes --cleanup-tag || true
+          gh release create "$TAG" "$F#app-arm64-debug.apk" --title "$TAG" --notes "feel build $(date -u +%FT%TZ)" || true
+          echo "ASSET=https://github.com/${{ github.repository }}/releases/download/$TAG/app-arm64-debug.apk"
       - uses: actions/upload-artifact@v4
         with:
           name: dsh-go-sensitive-apk
