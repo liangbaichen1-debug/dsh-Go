@@ -104,6 +104,7 @@ class CompanionAgentAttachment {
       isAttached ? _visit.openMemory() : Future.error(const DshClosedException('Companion window closed'));
   /// 页面那一层的「正在准备」闸：卡住时页面永远发不出去，所以要能读、能复位。
   bool get preparingBlocked => _visit.preparing;
+  void healPreparing() => _visit.healPreparing();
   void resetPreparing() => _visit.preparing = false;
 
   Future<void> submit(String raw, {String? assistantPage, bool returnToApp = false, bool voiceCall = false}) async {
@@ -188,6 +189,17 @@ class CompanionAgentResident {
   final _CompanionAgentVisit _visit;
   final CompanionAgentRoomUi _ui;
   CompanionMoves get moves => _visit.moves;
+  /// 卡死的「准备中」自动放开：每帧/每次变更都可以调用。
+  void healPreparing() {
+    final since = preparingSince;
+    if (!preparing || since == null) return;
+    if (DateTime.now().difference(since) > const Duration(seconds: 8)) {
+      preparing = false;
+      preparingSince = null;
+      changed();
+    }
+  }
+
   bool get active => _visit.active && identical(_visit.residentUi, _ui);
   CompanionMemoryOwner? get memory => active ? _visit.memory : null;
   String? get characterId => active ? _visit.characterId : null;
@@ -335,6 +347,8 @@ class _CompanionAgentVisit {
   late bool boundLight;
   bool closed = false;
   bool preparing = false;
+  /// preparing 的最后一次变化：超过 8 秒还没放开就当它卡死了（watchdog）。
+  DateTime? preparingSince;
 
   /// 清空对话 in progress: nothing new is taken until it is done, or its run
   /// would be dropped along with the old conversation's.
@@ -719,7 +733,15 @@ class _CompanionAgentVisit {
     }
 
     preparing = true;
-    changed();
+    preparingSince = DateTime.now();
+    // changed() 会同步 notifyListeners → 页面 setState；在 build 期间抛错会跳过下面整个 try/finally，
+    // preparing 就永远停在 true（按钮从此被禁用）。这里先兜住。
+    try {
+      changed();
+    } catch (_) {
+      preparing = false;
+      return;
+    }
     CompanionAgentMemoryTools? memoryTools;
     CompanionAgentTaskTools? taskTools;
     CompanionAgentPhoneTools? phoneTools;
